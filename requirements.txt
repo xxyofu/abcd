@@ -1,0 +1,14 @@
+--find-links https://download.pytorch.org/whl/cpu/torch/
+beautifulsoup4
+feedparser
+httpx
+lxml_html_clean
+numpy
+openai
+python-dotenv
+pyyaml
+sentence-transformers
+streamlit
+torch
+trafilatura
+typer

@@ -1,0 +1,13 @@
+title: SOC-аналитик
+audience: технический специалист SOC, ежедневный дайджест
+format: tech
+days: 2
+max_items: 20
+interests: >
+  Атаки на организации России, прежде всего энергетику и промышленность: группировки, методы первоначального доступа,
+  инструменты и индикаторы компрометации. Уязвимости корпоративного ПО с публичными эксплойтами и эксплуатацией в атаках.
+stack: [Windows Server, Active Directory, Microsoft Exchange, WSUS, SCCM, Windows Defender, 1С, Bitrix, Astra Linux, РЕД ОС,
+        Confluence, GLPI, TrueConf, ESXi, Fortinet, FortiOS, Cisco, PostgreSQL, Kaspersky]
+include_keywords: [энергетика, промышленность, RCE, 0-day, эксплойт, PoC, ransomware, шифровальщик, APT, бэкдор]
+exclude_keywords: [смартфон, геймер, криптовалюта]
+min_cvss: 7.0

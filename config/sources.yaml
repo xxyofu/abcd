@@ -1,0 +1,34 @@
+security_topics: &ib "кибер|хакер|хактив|утечк|уязвим|взлом|вредонос|фишинг|ddos|шифровальщ|вымогател|персональных данных|информационной безопасност|cyber|hack|vulnerab|exploit|malware|ransomware|breach|phishing"
+
+sources:
+  - {id: securitylab, type: rss, url: https://www.securitylab.ru/_services/export/rss/}
+  - {id: habr_infosec, type: rss, url: https://habr.com/ru/rss/hubs/infosecurity/articles/}
+  - {id: xakep, type: rss, url: https://xakep.ru/feed/}
+  - {id: anti_malware, type: rss, url: https://www.anti-malware.ru/news/feed, full_text: false}
+  - {id: securelist, type: rss, url: https://securelist.ru/feed/}
+  - {id: 1275_ru, type: rss, url: https://1275.ru/feed}
+  - {id: unit42, type: rss, url: https://unit42.paloaltonetworks.com/feed/}
+  - {id: checkpoint, type: rss, url: https://research.checkpoint.com/feed/}
+  - {id: bleepingcomputer, type: rss, url: https://www.bleepingcomputer.com/feed/}
+  - {id: thehackernews, type: rss, url: https://feeds.feedburner.com/TheHackersNews}
+  - {id: kommersant, type: rss, url: https://www.kommersant.ru/RSS/news.xml, match: *ib}
+  - {id: tadviser, type: rss, url: https://www.tadviser.ru/xml/tadviser.xml, match: *ib}
+  - {id: itsec, type: rss, url: https://www.itsec.ru/news/rss.xml}
+  - {id: bizone, type: html, url: https://bi.zone/expertise/blog/, pattern: '/expertise/blog/[^/?]+/$'}
+  - {id: f6, type: html, url: https://www.f6.ru/blog/, pattern: '/blog/[^/?]+/$'}
+  - {id: infowatch, type: html, url: https://www.infowatch.ru/analytics/novosti-ib, pattern: '/analytics/novosti-ib/[^/?]+$'}
+  - {id: securitymedia, type: html, url: https://securitymedia.org/news/, pattern: '/news/[^/?]+\.html$'}
+  - {id: safe_surf, type: html, url: https://safe-surf.ru/specialists/news/, pattern: '/specialists/news/\d+'}
+  - {id: securityvision, type: html, url: https://www.securityvision.ru/news/, pattern: '/news/[a-z0-9\-]+'}
+  - {id: cisa_kev, type: kev, url: https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json}
+  - {id: tg_secator, type: tg, channel: true_secator}
+  - {id: tg_purpleshift, type: tg, channel: purpleshift}
+  - {id: tg_proxy_bar, type: tg, channel: proxy_bar}
+  - {id: tg_zerodayalert, type: tg, channel: ZerodayAlert}
+  - {id: tg_cyberok, type: tg, channel: cyberok_news}
+  - {id: tg_seclabnews, type: tg, channel: SecLabNews}
+  - {id: tg_four_rays, type: tg, channel: four_rays}
+  - {id: tg_cyberguerre, type: tg, channel: cyberguerre}
+  - {id: tg_poxek, type: tg, channel: poxek}
+  - {id: tg_ptescalator, type: tg, channel: ptescalator}
+  - {id: tg_bitrixkiberbez, type: tg, channel: bitrixkiberbez}

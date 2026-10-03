@@ -1,0 +1,12 @@
+title: SOC-аналитик, облака и цепочка поставок
+audience: технический специалист SOC, ежедневный дайджест
+format: tech
+days: 2
+max_items: 20
+interests: >
+  Безопасность облаков, контейнеров и Kubernetes. Атаки на цепочку поставок ПО: вредоносные пакеты npm и PyPI,
+  компрометация CI/CD и репозиториев, утечки секретов и токенов.
+stack: [Kubernetes, Docker, GitHub, GitLab, Jenkins, Terraform, npm, PyPI, AWS, Azure]
+include_keywords: [supply chain, облако, контейнер, секреты, токены, CI/CD, репозиторий]
+exclude_keywords: [смартфон, геймер]
+min_cvss: 7.0

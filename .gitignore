@@ -1,0 +1,7 @@
+.env
+.venv/
+.idea/
+__pycache__/
+data/
+output/
+Датасет с примерами_v4.0.xlsx
