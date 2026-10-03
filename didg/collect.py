@@ -1,10 +1,13 @@
 import hashlib
 import re
+import ssl
 import textwrap
 import warnings
 from datetime import UTC, datetime
+from pathlib import Path
 from urllib.parse import parse_qsl, urlencode, urljoin, urlparse, urlunparse
 
+import certifi
 import feedparser
 import httpx
 import trafilatura
@@ -15,10 +18,13 @@ from didg.models import Article, config
 
 warnings.filterwarnings("ignore", category=MarkupResemblesLocatorWarning)
 EPOCH, LIMIT = datetime(2000, 1, 1, tzinfo=UTC), 20000
+TLS = ssl.create_default_context(cafile=certifi.where())
+TLS.load_verify_locations(Path(__file__).parents[1] / "config/russian_trusted_root_ca.pem")
 http = httpx.Client(
     headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"},
     timeout=30,
     follow_redirects=True,
+    verify=TLS,
 )
 
 

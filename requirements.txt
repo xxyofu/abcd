@@ -1,5 +1,6 @@
 --find-links https://download.pytorch.org/whl/cpu/torch/
 beautifulsoup4
+certifi
 feedparser
 httpx
 lxml_html_clean

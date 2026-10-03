@@ -1,7 +1,8 @@
 import json
 import os
-import subprocess
+import shutil
 import sys
+import tempfile
 from datetime import UTC, datetime, time
 from pathlib import Path
 
@@ -10,32 +11,83 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import streamlit as st
 from dotenv import load_dotenv
 
-from didg.agent import TASK, Agent
+from didg.agent import CHECKED, Agent, signature
 from didg.digest import render
 from didg.evaluate import evaluate, result, summary
 from didg.llm import LLM
-from didg.models import PROFILES, Article, Profile, config
+from didg.models import PROFILES, SOURCES, Article, Profile, config
 from didg.rank import select, vectors
 from didg.storage import Storage
 
 ROOT = Path(__file__).resolve().parents[1]
 os.chdir(ROOT)
 load_dotenv(ROOT / ".env")
+CANDIDATES = [
+    "https://t.me/alukatsky",
+    "https://t.me/knowyouradversary",
+    "https://t.me/ThreatHuntingFather",
+    "https://www.comnews.ru/information_security",
+    "https://securenews.ru/news/",
+    "https://cybernews.com/security/",
+]
+
+
+class Probe(Agent):
+    def __init__(self, *args, box, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.box, self.probes, self.changes, self.steps = box, [], [], []
+
+    def step(self, line):
+        self.steps.append(line)
+        self.box.markdown(line)
+
+    def overview(self, days=30):
+        found = super().overview(days)
+        self.step(f"📊 Статистика подключённых источников: {len(found['источники'])}")
+        return found
+
+    def probe_source(self, url, pattern=""):
+        self.box.update(label=f"Проверка {url}")
+        try:
+            found = super().probe_source(url, pattern)
+        except Exception as e:
+            found = {"ошибка": str(e)}
+        self.probes.append((url, found))
+        head = f"🔎 **{url}**" + (f" по шаблону `{pattern}`" if pattern else "")
+        if "ссылки на странице" in found:
+            self.step(f"{head}: RSS нет, {len(found['ссылки на странице'])} ссылок для шаблона")
+        elif "ошибка" in found:
+            self.step(f"{head}: {short(found)}")
+        else:
+            how = "" if pattern else f" ({way(found['источник'])})"
+            self.step(
+                f"{head}{how}: последняя {found['последняя']}, "
+                f"{found['в день']} в день, ИБ {found['доля ИБ']:.0%}, "
+                f"релевантность {found['релевантность профилю']}, "
+                f"дубли {found['доля дублей с базой']:.0%}"
+            )
+        return found
+
+    def set_source(self, **kwargs):
+        try:
+            done = super().set_source(**kwargs)
+        except Exception as e:
+            done = {"ошибка": str(e)}
+        self.changes.append((kwargs, done))
+        if "ошибка" in done:
+            self.step(f"⛔ `{kwargs.get('id')}`: отклонено — {done['ошибка']}")
+        elif "подключено" in done:
+            self.step(f"✅ `{kwargs['id']}` подключён, вес {float(kwargs.get('weight', 1)):g}")
+        else:
+            self.step(f"⚖️ `{kwargs['id']}`: вес {done['вес']:g}")
+        return done
 
 
 def read_jsonl(path):
     return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line]
 
 
-def commit():
-    try:
-        git = ["git", "rev-parse", "--short", "HEAD"]
-        return subprocess.run(git, capture_output=True, text=True, check=True).stdout.strip()
-    except (OSError, subprocess.CalledProcessError):
-        return os.getenv("APP_VERSION", "нет данных")
-
-
-@st.cache_resource(show_spinner="Подготовка: загрузка снимка публикаций и модели эмбеддингов…")
+@st.cache_resource(show_spinner="Подготовка данных…")
 def prepare():
     articles = [Article(**row) for row in read_jsonl(ROOT / "examples/articles.jsonl")]
     for a in articles:
@@ -43,7 +95,7 @@ def prepare():
     db = Storage()
     db.add_articles(articles)
     vectors(articles, db)
-    return max(a.published for a in articles).astimezone(UTC).date(), commit()
+    return max(a.published for a in articles).astimezone(UTC).date()
 
 
 def context():
@@ -86,87 +138,157 @@ def build(name, day, interests, stack, use_llm):
 
 
 def digest_tab(name, day, interests, stack, use_llm):
-    st.caption(
-        "Выпуск с LLM занимает 2–5 минут, без LLM — до минуты. "
-        "Пока он формируется, не меняйте параметры."
-    )
     if st.button("Сформировать", type="primary"):
-        with st.spinner("Отбор публикаций, склейка дублей, оценка и карточки…"):
+        with st.spinner("Формирование выпуска…"):
             st.session_state.digest = build(name, day, interests, stack, use_llm)
     if not (digest := st.session_state.get("digest")):
         return
-    st.download_button("Скачать Markdown", digest["markdown"], digest["file"], "text/markdown")
-    choice = st.selectbox("Отметить сюжет для следующего выпуска", list(digest["stories"]))
-    good, bad = st.columns(2)
+    choice, good, bad, save = st.columns([5, 2, 2, 2], vertical_alignment="bottom")
+    story = choice.selectbox("Отметить сюжет", list(digest["stories"]))
     for column, label, mark in ((good, "👍 Полезно", 1), (bad, "👎 Бесполезно", -1)):
-        if column.button(label) and choice:
-            Storage().add_feedback(digest["profile"], digest["stories"][choice], mark)
-            st.success("Отметка учтена: сформируйте выпуск заново")
-    st.divider()
+        if column.button(label) and story:
+            Storage().add_feedback(digest["profile"], digest["stories"][story], mark)
+            st.toast("Отметка учтена")
+    save.download_button("Скачать .md", digest["markdown"], digest["file"], "text/markdown")
     st.markdown(digest["markdown"])
 
 
 def eval_tab(use_llm):
-    st.caption(
-        "Выпуск каждой аудитории собирается только из примеров датасета организаторов "
-        "и сравнивается с их разметкой: попадание в выпуск, группа, приоритет, теги."
-    )
-    if st.button("Запустить сверку"):
+    if st.button("Запустить сверку", type="primary"):
         kev, trust = context()
-        lines = []
-        with st.spinner("Сверка с датасетом…"):
+        tables = []
+        with st.spinner("Сверка…"):
             cases = read_jsonl(ROOT / "examples/dataset.jsonl")
             for name, pairs, info in evaluate(cases, kev, trust, use_llm):
-                lines += [f"{name}: {summary(pairs)}"]
-                lines += [f"  {case['name']}: {result(case, story)}" for case, story in pairs]
-        st.session_state.eval = "\n".join(lines)
-    if text := st.session_state.get("eval"):
-        st.code(text, language=None, wrap_lines=True)
+                rows = [
+                    {"Пример": case["name"], "Результат": result(case, s)} for case, s in pairs
+                ]
+                tables.append((Profile.load(name).title, summary(pairs), rows))
+        st.session_state.eval = tables
+    for title, line, rows in st.session_state.get("eval", []):
+        st.subheader(title)
+        st.write(line)
+        st.dataframe(rows, hide_index=True)
 
 
-def agent_tab(name, has_llm):
-    task = st.text_area("Задача агенту", TASK, height=100)
-    apply = st.checkbox("Применять изменения к источникам")
+def same(a, b):
+    return a.rstrip("/").lower().split("://")[-1] == b.rstrip("/").lower().split("://")[-1]
+
+
+def short(found):
+    if "ссылки на странице" in found:
+        return "RSS не найден"
+    return "сайт закрыт (403)" if "403" in found["ошибка"] else found["ошибка"][:100]
+
+
+def way(src):
+    return {
+        "tg": "Telegram",
+        "rss": f"RSS {src.get('url')}",
+        "html": f"шаблон {src.get('pattern')}",
+    }.get(src["type"], src["type"])
+
+
+def verdict(url, agent):
+    tried = [found for probed, found in agent.probes if same(probed, url)]
+    found = next((f for f in reversed(tried) if "ошибка" not in f), tried[-1] if tried else None)
+    if not found or "ошибка" in found:
+        return {"Источник": url, "Решение": short(found) if found else "не проверен"}
+    src, decision = found["источник"], "не подключать"
+    for args, done in agent.changes:
+        if args.get("type") in CHECKED and signature(args) == signature(src):
+            weight = float(args.get("weight", 1))
+            decision = f"подключить, вес {weight:g}" if "подключено" in done else done["ошибка"]
+    return {
+        "Источник": url,
+        "Сбор": way(src),
+        "Последняя": str(found["последняя"]),
+        "В день": found["в день"],
+        "Доля ИБ": f"{found['доля ИБ']:.0%}",
+        "Релевантность": found["релевантность профилю"],
+        "Дубли": f"{found['доля дублей с базой']:.0%}",
+        "Решение": decision,
+    }
+
+
+def review(name, urls):
+    links = [u.strip() for u in urls.splitlines() if u.strip()]
+    task = f"Проверь источники-кандидаты: {', '.join(links)}. Подключи только полезные."
+    db, answer = Storage(), ""
+    with (
+        st.status("Агент проверяет источники…", expanded=True) as box,
+        tempfile.TemporaryDirectory() as tmp,
+    ):
+        sandbox = Path(tmp) / "sources.yaml"
+        shutil.copy(SOURCES, sandbox)
+        agent = Probe(
+            Profile.load(name),
+            db,
+            LLM(db),
+            lambda text: True,
+            lambda line: None,
+            sources=sandbox,
+            box=box,
+        )
+        try:
+            answer = agent.run(task)
+            box.update(label="Ход работы агента", state="complete")
+        except Exception as e:
+            box.update(label=f"Ошибка: {e}", state="error")
+        before = set(SOURCES.read_text(encoding="utf-8").splitlines())
+        added = [s for s in sandbox.read_text(encoding="utf-8").splitlines() if s not in before]
+    rows = [verdict(url, agent) for url in links]
+    return {"steps": agent.steps, "rows": rows, "answer": answer, "added": added}
+
+
+def agent_tab(name):
     st.caption(
-        "Без флажка агент проверяет источники и предлагает изменения, конфигурация не меняется."
+        "Агент — модель с инструментами: сама проверяет кандидатов, решает, какие подключить, "
+        "и задаёт им вес. Код не даёт подключить непроверенный источник; изменения пишутся "
+        "в копию config/sources.yaml."
     )
-    if st.button("Запустить агента", disabled=not has_llm):
-        db = Storage()
-        with st.status("Агент работает…", expanded=True) as status:
-            agent = Agent(Profile.load(name), db, LLM(db), lambda text: apply, status.text)
-            try:
-                report = agent.run(task)
-                status.update(label="Агент закончил", state="complete")
-            except Exception as e:
-                report = f"Ошибка: {e}"
-                status.update(label="Агент остановлен", state="error")
-        st.session_state.agent = report, agent.applied
-    if run := st.session_state.get("agent"):
-        st.markdown(run[0])
-        st.info("Применено: " + ("; ".join(run[1]) or "ничего"))
+    urls = st.text_area("Источники-кандидаты", "\n".join(CANDIDATES), height=170)
+    if st.button("Проверить источники", type="primary"):
+        st.session_state.agent = review(name, urls)
+    elif report := st.session_state.get("agent"):
+        with st.status("Ход работы агента", state="complete", expanded=True):
+            for line in report["steps"]:
+                st.markdown(line)
+    if not (report := st.session_state.get("agent")):
+        return
+    st.subheader("Решения", anchor=False)
+    st.dataframe(report["rows"], hide_index=True)
+    if report["answer"]:
+        st.subheader("Вывод агента", anchor=False)
+        st.markdown(report["answer"])
+    if report["added"]:
+        st.subheader("Записано в sources.yaml", anchor=False)
+        st.code("\n".join(report["added"]), "yaml")
 
 
 st.set_page_config(page_title="ИТ/ИБ-дайджест", layout="wide")
-last_day, version = prepare()
+st.html("<style>[data-testid='InputInstructions'] {display: none}</style>")
+last_day = prepare()
 login()
-has_llm = bool(os.getenv("LLM_API_KEY"))
+use_llm = bool(os.getenv("LLM_API_KEY"))
 with st.sidebar:
     names = sorted(p.stem for p in PROFILES.glob("*.yaml"))
     name = st.selectbox(
         "Профиль", names, names.index("soc"), format_func=lambda n: Profile.load(n).title
     )
     profile = Profile.load(name)
-    day = st.date_input("Выпуск на конец дня", last_day)
+    day = st.date_input("Дата выпуска", last_day)
     interests = st.text_area(
         "Интересы", " ".join(profile.interests.split()), height=200, key=f"interests-{name}"
     )
-    stack = st.text_input("Стек через запятую", ", ".join(profile.stack), key=f"stack-{name}")
-    use_llm = st.toggle("Использовать LLM", has_llm, disabled=not has_llm)
-    st.caption(f"Окно профиля: {profile.days} дн. · версия {version}")
-digest, check, agent = st.tabs(["Дайджест", "Сверка с датасетом", "Агент"])
+    stack = st.text_input("Стек", ", ".join(profile.stack), key=f"stack-{name}")
+digest, check, sources = st.tabs(["Дайджест", "Сверка с датасетом", "Источники"])
 with digest:
     digest_tab(name, day, interests, stack, use_llm)
 with check:
     eval_tab(use_llm)
-with agent:
-    agent_tab(name, has_llm)
+with sources:
+    if use_llm:
+        agent_tab(name)
+    else:
+        st.info("Для агента нужен LLM_API_KEY")

@@ -36,7 +36,8 @@ SYSTEM = (
     "отключает источник;\n"
     "  вес подключённого источника меняй, только если у него от 3 отметок или от 20 "
     "публикаций за 30 дней;\n"
-    "- в конце кратко на русском перечисли, что проверил, что изменил и почему."
+    "- в конце кратко на русском перечисли, что проверил, что изменил и почему; изменением "
+    "считай только то, что подтвердил set_source."
 )
 
 
@@ -91,7 +92,7 @@ def signature(src):
 
 
 class Agent:
-    def __init__(self, profile, storage, llm, confirm, log):
+    def __init__(self, profile, storage, llm, confirm, log, sources=SOURCES):
         self.profile, self.storage, self.llm, self.confirm, self.log = (
             profile,
             storage,
@@ -99,7 +100,7 @@ class Agent:
             confirm,
             log,
         )
-        self.applied, self.probed = [], set()
+        self.sources, self.applied, self.probed = sources, [], set()
 
     def run(self, task, steps=40):
         messages = [
@@ -173,6 +174,9 @@ class Agent:
             if src["type"] == "rss" and not error:
                 try:
                     result["ссылки на странице"] = site_links(url)
+                    result["ошибка"] = (
+                        "RSS не найден: составь pattern по ссылкам страницы и проверь сайт ещё раз"
+                    )
                 except httpx.HTTPError:
                     pass
             return result
@@ -206,14 +210,15 @@ class Agent:
 
     def set_source(self, id, weight=1.0, type="", url="", channel="", pattern="", match=""):
         text, weight = (
-            SOURCES.read_text(encoding="utf-8"),
+            self.sources.read_text(encoding="utf-8"),
             round(min(2.0, max(0.0, float(weight))), 2),
         )
         row = re.compile(rf'^(  - \{{id: "?{re.escape(id)}"?,.*?)(, weight: [\d.]+)?\}}$', re.M)
         if row.search(text):
             since = datetime.now(UTC) - timedelta(days=30)
             stat = next(
-                s for s in self.storage.source_stats(self.profile.name, since) if s["id"] == id
+                (s for s in self.storage.source_stats(self.profile.name, since) if s["id"] == id),
+                {"публикаций": 0},
             )
             marks, volume = stat.get("полезно", 0) + stat.get("бесполезно", 0), stat["публикаций"]
             if marks < 3 and volume < 20 and not (weight == 0 and volume == 0):
@@ -222,7 +227,7 @@ class Agent:
                 }
             if not self.confirm(f"Установить источнику {id} вес {weight}?"):
                 return {"ошибка": "пользователь отклонил"}
-            SOURCES.write_text(row.sub(rf"\1, weight: {weight}}}", text), encoding="utf-8")
+            self.sources.write_text(row.sub(rf"\1, weight: {weight}}}", text), encoding="utf-8")
             self.applied.append(f"{id}: вес {weight}")
             return {"источник": id, "вес": weight}
         if type not in CHECKED or not (url or channel):
@@ -250,6 +255,6 @@ class Agent:
         line = yaml.safe_dump(
             entry, default_flow_style=True, sort_keys=False, allow_unicode=True, width=1000
         )
-        SOURCES.write_text(text.rstrip("\n") + "\n  - " + line, encoding="utf-8")
+        self.sources.write_text(text.rstrip("\n") + "\n  - " + line, encoding="utf-8")
         self.applied.append(f"{id}: подключён" + (f", вес {weight}" if weight != 1.0 else ""))
         return {"подключено": entry}
