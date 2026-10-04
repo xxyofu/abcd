@@ -242,11 +242,6 @@ def review(name, urls):
 
 
 def agent_tab(name):
-    st.caption(
-        "Агент — модель с инструментами: сама проверяет кандидатов, решает, какие подключить, "
-        "и задаёт им вес. Код не даёт подключить непроверенный источник; изменения пишутся "
-        "в копию config/sources.yaml."
-    )
     urls = st.text_area("Источники-кандидаты", "\n".join(CANDIDATES), height=170)
     if st.button("Проверить источники", type="primary"):
         st.session_state.agent = review(name, urls)
